@@ -66,8 +66,23 @@ Once your code is on GitHub, installing it on a new server is simple.
     bench restart
     ```
 
----
-*Generated for Mohammedkh97 — GitHub Migration workflow*
+## Phase 3: Data Migration (Working with "Old Data")
+
+Moving the App only moves the code. To move your **Leads, Events, and Dashboard Records**, you must migrate the database.
+
+### 1. Create a Backup (on Test Server)
+```bash
+docker exec frappe-production-backend-1 bench --site [site-name] backup --with-files
+```
+The backup files will be in `/opt/frappe/Frappe-Production/backups/`.
+
+### 2. Transfer Backup to Production
+Use `scp` to send the `.sql.gz` and files to the new server's backup folder.
+
+### 3. Restore on Production
+```bash
+docker exec -it frappe-production-backend-1 bench --site [new-site-name] restore [path-to-sql-file] --with-public-files [path-to-public-files] --with-private-files [path-to-private-files]
+```
 
 ---
-*Generated for Mohammedkh97 — Employee Performance Migration*
+*Generated for Mohammedkh97 — GitHub Migration & Data Sync workflow*
