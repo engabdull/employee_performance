@@ -1,0 +1,2 @@
+# Standard Frappe dependencies
+# No additional requirements for this app
