@@ -1,0 +1,30 @@
+{
+    "creation": "2026-02-25 00:00:00.000000",
+    "doctype": "Page",
+    "modified": "2026-02-25 00:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Employee Performance",
+    "name": "employee-performance",
+    "owner": "Administrator",
+    "page_name": "employee-performance",
+    "roles": [
+        {
+            "doctype": "Page Role",
+            "role": "System Manager"
+        },
+        {
+            "doctype": "Page Role",
+            "role": "HR Manager"
+        },
+        {
+            "doctype": "Page Role",
+            "role": "HR User"
+        },
+        {
+            "doctype": "Page Role",
+            "role": "Employee"
+        }
+    ],
+    "standard": "Yes",
+    "title": "Employee Performance"
+}
