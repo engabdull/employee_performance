@@ -1,78 +1,73 @@
-# Migration Guide: Moving Employee Performance to Production
+# Migration Guide: Moving Employee Performance via GitHub
 
-Use this guide to move the "Employee Performance" app from your test server to your production environment.
+Using GitHub is the recommended way to move your app. This makes it easy to install, update, and manage versions on your production server.
 
-## Phase 1: Package the App (on Test Server)
+## Phase 1: Push the App to GitHub (on Test Server)
 
-Since your code resides in the `apps/employee_performance` directory, the easiest way is to create a compressed archive of the app.
-
-1.  **Navigate to the apps directory:**
+1.  **Initialize Git in the app folder:**
     ```bash
-    cd /opt/frappe/Frappe-Production/apps/
-    ```
-2.  **Compress the app folder:**
-    ```bash
-    tar -czvf employee_performance.tar.gz employee_performance/
+    cd /opt/frappe/Frappe-Production/apps/employee_performance/
+    git init
+    git branch -M main
     ```
 
-## Phase 2: Transfer to Production Server
-
-Transfer the file to your new server using `scp` (Secure Copy).
-
-1.  **Run this from your test server:**
+2.  **Add and Commit your code:**
     ```bash
-    scp employee_performance.tar.gz user@production-ip-address:/tmp/
+    git add .
+    git commit -m "Initial commit: Employee Performance Dashboard"
     ```
 
-## Phase 3: Install on Production (Docker Environment)
+3.  **Create a New Repository on GitHub:**
+    *   Go to [github.com/new](https://github.com/new).
+    *   Name it `employee_performance`.
+    *   **Do not** initialize with README or License.
 
-If your production server is using the same Docker setup as this one:
-
-1.  **Move the app to the production apps directory:**
+4.  **Push to GitHub:**
+    *(Replace `YOUR_USERNAME` with your actual GitHub username)*
     ```bash
-    # On production server
-    cd /opt/frappe/Frappe-Production/apps/
-    cp /tmp/employee_performance.tar.gz .
-    tar -xzvf employee_performance.tar.gz
-    rm employee_performance.tar.gz
+    git remote add origin https://github.com/YOUR_USERNAME/employee_performance.git
+    git push -u origin main
     ```
 
-2.  **Install the app inside the container:**
+## Phase 2: Install on Production Server
+
+Once your code is on GitHub, installing it on a new server is simple.
+
+### Method A: Docker Environment (Recommended)
+
+1.  **Enter your production backend container:**
     ```bash
-    # Enter the backend container
     docker exec -it frappe-production-backend-1 bash
-
-    # Run bench commands
-    bench get-app /home/frappe/frappe-bench/apps/employee_performance
-    bench --site [your-site-name] install-app employee_performance
-    
-    # Build assets
-    bench build --app employee_performance
     ```
 
-3.  **Restart Services:**
+2.  **Download and Install the app:**
     ```bash
+    # Replace the URL with your GitHub repo URL
+    bench get-app https://github.com/YOUR_USERNAME/employee_performance.git
+    
+    # Install it on your site
+    bench --site [your-site-name] install-app employee_performance
+    ```
+
+3.  **Build Assets and Restart:**
+    ```bash
+    bench build --app employee_performance
+    exit
     docker restart frappe-production-backend-1
     ```
 
-## Phase 4: Install on Production (Standard Bench)
+### Method B: Standard Linux/Bench Environment
 
-If your production server is a standard Linux VPS (not Docker):
-
-1.  **Extract the app in `frappe-bench/apps/`**
-2.  **Run the following commands:**
+1.  **Run these commands in your `frappe-bench` folder:**
     ```bash
-    bench get-app /path/to/extracted/employee_performance
+    bench get-app https://github.com/YOUR_USERNAME/employee_performance.git
     bench --site [your-site-name] install-app employee_performance
     bench build --app employee_performance
     bench restart
     ```
 
-## ⚠️ Important Considerations
-
-*   **Database Migration:** If you created custom fields or modified DocTypes *outside* of the app code, you must migrate those manually or use a database backup.
-*   **Dependency Check:** Ensure the `employee_performance` app is listed in your site's `site_config.json`.
-*   **Permissions:** After extracting on production, ensure the file owner matches the user running the bench (usually `frappe`).
+---
+*Generated for Mohammedkh97 — GitHub Migration workflow*
 
 ---
 *Generated for Mohammedkh97 — Employee Performance Migration*
