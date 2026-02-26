@@ -21,7 +21,7 @@ function render_layout(page) {
 			<div class="epd-header">
 				<div class="epd-greeting">
 					<h1 id="epd-greeting-text">${greeting}</h1>
-					<p>${__('Here is a performance overview for Last Month.')}</p>
+					<p>${__('Here is a performance overview for the Last 30 Days.')}</p>
 				</div>
 				<div class="epd-filter" id="employee-selector-container"></div>
 			</div>
@@ -55,7 +55,7 @@ function render_layout(page) {
 				<!-- Left: Reports & Trend -->
 				<div class="epd-content-section">
 					<div class="section-title">
-						${__("Monthly Activity Distribution")}
+						${__("30 Days Activity Distribution")}
 						<span>${__("Events & Categories")}</span>
 					</div>
 					<div id="main-distribution-chart" style="height: 350px; min-height: 350px;"></div>
@@ -94,12 +94,12 @@ function render_layout(page) {
                             <tr>
                                 <td><div class="emp-name">${__("Total Attendance")}</div></td>
                                 <td data-field="attendance_total">0</td>
-                                <td><div class="emp-meta">${__("Total present days in the last month.")}</div></td>
+                                <td><div class="emp-meta">${__("Total present days in the last 30 days.")}</div></td>
                             </tr>
                             <tr>
                                 <td><div class="emp-name">${__("Daily Report Count")}</div></td>
                                 <td data-field="daily_report">0</td>
-                                <td><div class="emp-meta">${__("Total recorded logs for the last month.")}</div></td>
+                                <td><div class="emp-meta">${__("Total recorded logs for the last 30 days.")}</div></td>
                             </tr>
                             <tr>
                                 <td><div class="emp-name">${__("Appointments")}</div></td>
@@ -109,7 +109,7 @@ function render_layout(page) {
                             <tr>
                                 <td><div class="emp-name">${__("Total Task")}</div></td>
                                 <td data-field="total_task">0</td>
-                                <td><div class="emp-meta">${__("Total tasks assigned in the last month.")}</div></td>
+                                <td><div class="emp-meta">${__("Total tasks assigned in the last 30 days.")}</div></td>
                             </tr>
                         </tbody>
                     </table>
@@ -225,7 +225,7 @@ function render_main_dist(data) {
     $(container).empty();
 
     if (!data || !data.labels || data.labels.length === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 60px 20px;">${__('No activity data for last month')}</div>`);
+        $(container).html(`<div class="text-muted text-center" style="padding: 60px 20px;">${__('No activity data for the last 30 days')}</div>`);
         return;
     }
 
@@ -255,7 +255,7 @@ function render_leads_pulse(data) {
     $(container).empty();
 
     if (!data || !data.labels || data.labels.length === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 40px 20px;">${__('No leads data for last month')}</div>`);
+        $(container).html(`<div class="text-muted text-center" style="padding: 40px 20px;">${__('No leads data for the last 30 days')}</div>`);
         return;
     }
 
@@ -284,7 +284,7 @@ function render_attendance_donut(data) {
     $(container).empty();
 
     if (!data || !data.labels || data.labels.length === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 60px 20px;">${__('No attendance data for last month')}</div>`);
+        $(container).html(`<div class="text-muted text-center" style="padding: 60px 20px;">${__('No attendance data for the last 30 days')}</div>`);
         return;
     }
 

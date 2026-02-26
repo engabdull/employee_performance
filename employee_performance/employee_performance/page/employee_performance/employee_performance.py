@@ -44,10 +44,12 @@ def _get_user_from_employee(employee):
 def get_employee_dashboard(employee):
     if not employee:
         frappe.throw(_("Employee is required"))
+    
     today = date.today()
-    first_day_current = today.replace(day=1)
-    last_month_end   = first_day_current - timedelta(days=1)
-    last_month_start = last_month_end.replace(day=1)
+    # Rolling 30-day window
+    month_start = today - timedelta(days=30)
+    month_end   = today
+    upper_bound = month_end + timedelta(days=1)
 
     user_id = _get_user_from_employee(employee)
 
@@ -99,40 +101,36 @@ def get_employee_dashboard(employee):
     }
 
     if not user_id:
-        # frappe.log_error(f"EPD: No user_id found for employee {employee}", "Employee Performance Dashboard")
         return response
 
-    # Datetime upper bound — captures the full last day
-    upper_bound = last_month_end + timedelta(days=1)
-
     # ------------------------------------------------------------------
-    # CRM — Total Leads (Last Month)
+    # CRM — Total Leads (Last 30 Days)
     # ------------------------------------------------------------------
     total_leads = frappe.db.count("Lead", {
         "lead_owner": user_id,
-        "creation": ["between", [last_month_start, upper_bound]]
+        "creation": ["between", [month_start, upper_bound]]
     })
     response["crm"]["total_leads"] = total_leads
 
     # ------------------------------------------------------------------
-    # CRM — Opportunities (Last Month)
+    # CRM — Opportunities (Last 30 Days)
     # ------------------------------------------------------------------
     response["crm"]["total_opportunities"] = frappe.db.count("Opportunity", {
         "opportunity_owner": user_id,
-        "creation": ["between", [last_month_start, upper_bound]]
+        "creation": ["between", [month_start, upper_bound]]
     })
 
     # ------------------------------------------------------------------
-    # CRM — Sales Invoices (Last Month)
+    # CRM — Sales Invoices (Last 30 Days)
     # ------------------------------------------------------------------
     if frappe.db.exists("DocType", "Sales Invoice"):
         response["crm"]["sales_invoices"] = frappe.db.count("Sales Invoice", {
             "owner": user_id,
-            "posting_date": ["between", [last_month_start, last_month_end]]
+            "posting_date": ["between", [month_start, month_end]]
         })
 
     # ------------------------------------------------------------------
-    # CRM — Active Customers converted from leads (Last Month)
+    # CRM — Active Customers (Last 30 Days)
     # ------------------------------------------------------------------
     active_customers = frappe.db.sql("""
         SELECT COUNT(DISTINCT c.name)
@@ -141,7 +139,7 @@ def get_employee_dashboard(employee):
         WHERE l.lead_owner = %s
           AND c.disabled = 0
           AND l.creation BETWEEN %s AND %s
-    """, (user_id, last_month_start, upper_bound))[0][0] or 0
+    """, (user_id, month_start, upper_bound))[0][0] or 0
     response["crm"]["active_customers"] = active_customers
 
     if total_leads > 0:
@@ -150,7 +148,7 @@ def get_employee_dashboard(employee):
         )
 
     # ------------------------------------------------------------------
-    # Leads Pulse Chart (Daily distribution for last month)
+    # Leads Pulse Chart (Daily distribution for Last 30 Days)
     # ------------------------------------------------------------------
     leads_data = frappe.db.sql("""
         SELECT DATE(creation) AS d, COUNT(*) AS cnt
@@ -159,21 +157,20 @@ def get_employee_dashboard(employee):
           AND creation BETWEEN %s AND %s
         GROUP BY DATE(creation)
         ORDER BY DATE(creation)
-    """, (user_id, last_month_start, upper_bound), as_dict=True)
+    """, (user_id, month_start, upper_bound), as_dict=True)
 
     pulse_map = {}
     for row in leads_data:
         d_val = row.get("d")
         if d_val:
-            # Use frappe.utils.getdate to handle various date-like objects
             d_str = str(frappe.utils.getdate(d_val))
             pulse_map[d_str] = int(row.get("cnt") or 0)
 
-    num_days     = (last_month_end - last_month_start).days + 1
+    num_days     = (month_end - month_start).days + 1
     pulse_labels = []
     pulse_values = []
     for i in range(num_days):
-        d_obj = last_month_start + timedelta(days=i)
+        d_obj = month_start + timedelta(days=i)
         d_str = d_obj.strftime("%Y-%m-%d")
         pulse_labels.append(d_str)
         pulse_values.append(pulse_map.get(d_str, 0))
@@ -182,9 +179,7 @@ def get_employee_dashboard(employee):
     response["leads_pulse"]["values"] = pulse_values
 
     # ------------------------------------------------------------------
-    # HR & Attendance (Last Month)
-    # FIX: docstatus IN (0, 1) — include both draft and submitted records
-    # so attendance shows even when records haven't been formally submitted.
+    # HR & Attendance (Last 30 Days)
     # ------------------------------------------------------------------
     attendance_stats_list = frappe.db.sql("""
         SELECT
@@ -195,7 +190,7 @@ def get_employee_dashboard(employee):
         WHERE employee = %s
           AND docstatus IN (0, 1)
           AND attendance_date BETWEEN %s AND %s
-    """, (employee, last_month_start, last_month_end), as_dict=True)
+    """, (employee, month_start, month_end), as_dict=True)
 
     attendance_stats = attendance_stats_list[0] if attendance_stats_list else {}
 
@@ -208,13 +203,13 @@ def get_employee_dashboard(employee):
     ]
 
     # ------------------------------------------------------------------
-    # Daily Employee Report Integration (Last Month)
+    # Daily Employee Report (Last 30 Days)
     # ------------------------------------------------------------------
     reports = frappe.db.get_all(
         "Daily Employee Report",
         filters={
             "employee": employee,
-            "date": ["between", [last_month_start, last_month_end]]
+            "date": ["between", [month_start, month_end]]
         },
         fields=["date", "daily_summary"],
         order_by="date desc",
@@ -223,7 +218,7 @@ def get_employee_dashboard(employee):
 
     response["daily_report"] = frappe.db.count("Daily Employee Report", {
         "employee": employee,
-        "date": ["between", [last_month_start, last_month_end]]
+        "date": ["between", [month_start, month_end]]
     })
 
     response["hr"]["recent_checkins"] = [
@@ -236,23 +231,22 @@ def get_employee_dashboard(employee):
     ]
 
     # ------------------------------------------------------------------
-    # Appointments (Last Month)
+    # Appointments (Last 30 Days)
     # ------------------------------------------------------------------
     response["appointments"]["total"] = frappe.db.count("Appointment", {
         "owner": user_id,
-        "scheduled_time": ["between", [last_month_start, upper_bound]]
+        "scheduled_time": ["between", [month_start, upper_bound]]
     })
 
     # ─────────────────────────────────────────────────────
-    # Events Chart — Activity Distribution (Last Month)
+    # Events Chart (Last 30 Days)
     # ─────────────────────────────────────────────────────
     categories  = ["Call", "Meeting", "Event", "Other"]
     counts_map  = {cat: 0 for cat in categories}
 
     events_filters = {
-        "starts_on": ["between", [last_month_start, upper_bound]]
+        "starts_on": ["between", [month_start, upper_bound]]
     }
-    # Check for employee field (custom or site-specific)
     if frappe.db.has_column("Event", "employee"):
         events_filters["employee"] = employee
     else:
@@ -263,7 +257,6 @@ def get_employee_dashboard(employee):
     for row in event_counts:
         etype = (row.get("event_type") or "").strip()
         cnt   = int(row.get("cnt") or 0)
-
         if etype == "Call":
             counts_map["Call"] += cnt
         elif etype == "Meeting":
@@ -277,12 +270,12 @@ def get_employee_dashboard(employee):
     response["events_chart"]["values"] = [counts_map[cat] for cat in categories]
 
     # ------------------------------------------------------------------
-    # Total Tasks (Last Month)
+    # Total Tasks (Last 30 Days)
     # ------------------------------------------------------------------
     if frappe.db.exists("DocType", "Task"):
         response["total_task"] = frappe.db.count("Task", {
             "owner": user_id,
-            "creation": ["between", [last_month_start, upper_bound]]
+            "creation": ["between", [month_start, upper_bound]]
         })
 
     return response
