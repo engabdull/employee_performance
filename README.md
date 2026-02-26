@@ -1,53 +1,94 @@
 # Employee Performance Dashboard
 
-A comprehensive performance tracking and analytics dashboard for Frappe/ERPNext, designed to give managers and employees a clear view of their productivity, CRM activity, and attendance.
+A robust, real-time performance analytics dashboard for Frappe and ERPNext. This app provides managers and employees with a visual overview of CRM activity, HR attendance, and overall productivity.
 
 ## 🚀 Key Features
 
-### 1. CRM Performance Analytics
-* **Leads Tracking:** Total Leads assigned to the employee for the selected period.
-* **Leads Pulse:** A daily distribution chart showing when leads are being created and assigned.
-* **Conversion Metrics:** Track Opportunities, Customers converted from leads, and the overall Conversion Rate percentage.
-
-### 2. Activity & Engagement
-* **Monthly Activity Chart:** Visual breakdown of employee engagement including:
-    * **Calls** (logged via Events)
-    * **Meetings**
-    * **General Events** (Public/Private)
-* **Appointments:** Total count of scheduled appointments with customers.
-
-### 3. HR & Productivity
-* **Attendance Overview:** Digital donut chart showing Present vs. Absent vs. Half Day distribution.
-* **Daily Employee Reports:** Integration with Daily Report doctype to track summaries of work done.
-* **Task Completion:** Visual gauge or count of Pending vs. Completed tasks.
-
-### 4. Interactive Dashboard
-* **Dynamic Employee Selector:** Switch between different employees to view their specific data.
-* **Automatic Period Sync:** The dashboard defaults to showing the previous full month's data (e.g., if today is Feb 26, it shows January).
-
-## 🛠 Technical Architecture
-
-* **Frontend:** Built with vanilla JavaScript, Chart.js for data visualization, and Frappe's Page API.
-* **Backend:** Python-based API in `employee_performance.py` using optimized SQL queries for high-speed data retrieval.
-* **Data Sources:** Integrates data from standard DocTypes:
-    * `Lead`, `Opportunity`, `Customer`
-    * `Event`, `Appointment`, `Task`
-    * `Attendance`, `Daily Employee Report`
-
-## 📊 Data Mapping
-The app expects the following fields for accurate tracking:
-* **Leads/Opps:** Filtered by `owner` or `lead_owner`.
-* **Events:** Filtered by `owner` and categorized by `event_type` (Call, Meeting, etc.).
-* **Attendance:** Filtered by the `employee` link and `attendance_date`.
-
-## 🧪 Test Data Generator
-The app includes a powerful utility for developers to populate the dashboard with realistic data.
-* **Script:** `create_test_dashboard_data.py`
-* **Command:** `bench execute frappe.utils.create_test_dashboard_data.create_test_data`
-* **Features:**
-    * Automatically handles joining date validations.
-    * Generates weighted random data for Leads, Opps, Tasks, and Events.
-    * Correctly maps data ownership to specific employee emails.
+*   **CRM Analytics:** Real-time tracking of Leads, Opportunities, and Customer conversions.
+*   **Activity Pulse:** Daily distribution charts showing lead assignments and engagement.
+*   **Engagement Tracking:** Visual breakdown of Calls, Meetings, and Events.
+*   **HR Integration:** Integrated Attendance monitoring (Present vs. Absent) and Daily Work Reports.
+*   **Multi-Employee Support:** Dynamic selector to switch views between different employees.
+*   **Intelligent Period Sync:** Automatically targets the previous full month (e.g., in February, it shows January).
 
 ---
-*Created for Mohammedkh97 - Employee Performance Analytics*
+
+## 📂 File Architecture & Technical Details
+
+The app is built using Frappe's **Page API**. Below is a breakdown of the core files and their responsibilities:
+
+### 1. `employee_performance.py` (Backend)
+*   **Role:** The "Brain" of the dashboard.
+*   **Logic:** Handles all SQL queries to the Frappe database (`tabLead`, `tabEvent`, `tabAttendance`, etc.).
+*   **Key Functions:**
+    *   Calculates date ranges for the target month.
+    *   Performs data aggregation (sums, counts, averages).
+    *   Explicitly type-casts data (e.g., `int()`) to ensure compatibility with JSON and frontend charts.
+    *   Implements role-based filtering (filters data by `owner` or `employee_id`).
+
+### 2. `employee_performance.js` (Frontend)
+*   **Role:** The "Interface & Controller".
+*   **Logic:** Manages the User Interface, handles the Employee selector, and renders all charts.
+*   **Technology:** Uses **Chart.js** for visualizations.
+*   **Responsibilities:**
+    *   Fetches data from the Python backend via `frappe.call`.
+    *   Dynamic DOM manipulation (updates cards, headers, and text).
+    *   Chart Initialization: Configures colors, tooltips, and responsive behavior for the donut, bar, and pulse charts.
+
+### 3. `employee_performance.json` (Configuration)
+*   **Role:** The "App Definition".
+*   **Metadata:** This file registers the page within the Frappe framework.
+*   **Links:** It tells Frappe that the Page is named "Employee Performance" and points it to the associated `.js` and `.py` files.
+
+### 4. `employee_performance.css` (Styling)
+*   **Role:** The "Aesthetics".
+*   **Logic:** Provides custom styling for the dashboard layout.
+*   **Features:**
+    *   Modern card layouts with shadows and hover effects.
+    *   Custom color tokens for attendance (Green/Red) and activity charts.
+    *   Responsive grid system to ensure the dashboard looks good on all screen sizes.
+
+### 5. `create_test_dashboard_data.py` (Utility)
+*   **Role:** High-speed data generator for testing.
+*   **Logic:** Programmatically creates Lead, Event, Task, and Attendance records.
+*   **Features:** Respects employee joining dates and prevents validation errors.
+
+---
+
+## 📦 Installation Guide (GitHub)
+
+Follow these steps to install this app on a new Frappe/ERPNext server.
+
+### 1. Requirements
+*   A working Frappe Bench environment.
+*   ERPNext (optional, but required for Lead/Opportunity metrics).
+*   HRMS (optional, but required for Attendance metrics).
+
+### 2. Download and Install
+Run these commands in your `frappe-bench` directory:
+
+```bash
+# 1. Download the app from your GitHub
+bench get-app https://github.com/KareemTarekAnwerHelmy/Employee-Performance.git
+
+# 2. Install the app on your specific site
+bench --site [your-site-name] install-app employee_performance
+
+# 3. Build the frontend assets
+bench build --app employee_performance
+
+# 4. Restart the bench to apply changes
+bench restart
+```
+
+*(Note: If using Docker, run the bench commands inside the backend container & restart the container)*
+
+---
+
+## 🛠 Usage & Verification
+1.  Navigate to **Employee Performance** in the Frappe search bar.
+2.  Select an employee from the dropdown.
+3.  **Pro Tip:** If you don't see data immediately, perform a **Hard Refresh (Ctrl + Shift + R)** to clear the browser cache.
+
+---
+*Developed for Mohammedkh97 — Modern Employee Analytics*
