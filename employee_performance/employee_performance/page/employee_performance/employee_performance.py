@@ -12,24 +12,33 @@ def get_context(context):
 # Helpers
 # ---------------------------------------------------------
 
-def _get_month_number(month):
-    if str(month).isalpha():
-        month_map = {
-            "January": 1, "February": 2, "March": 3,
-            "April": 4, "May": 5, "June": 6,
-            "July": 7, "August": 8, "September": 9,
-            "October": 10, "November": 11, "December": 12
-        }
-        return month_map.get(str(month).capitalize(), 1)
-    return int(month)
+def _parse_date(val, fallback):
+    """Return a date object from val, or fallback if val is absent/invalid."""
+    if not val:
+        return fallback
+    try:
+        return frappe.utils.getdate(val)
+    except Exception:
+        return fallback
 
 
-def _get_date_range(month, year):
-    month = _get_month_number(month)
-    year = int(year)
-    start_date = date(year, month, 1)
-    end_date = date(year, month, calendar.monthrange(year, month)[1])
-    return start_date, end_date
+def _resolve_date_range(from_date_raw, to_date_raw):
+    """
+    Resolve the from / to dates supplied by the caller.
+    Defaults: from_date = first day of current month, to_date = today.
+    """
+    today = date.today()
+    default_from = date(today.year, today.month, 1)
+    default_to   = today
+
+    from_date = _parse_date(from_date_raw, default_from)
+    to_date   = _parse_date(to_date_raw,   default_to)
+
+    # Sanity: from must not be after to
+    if from_date > to_date:
+        from_date, to_date = to_date, from_date
+
+    return from_date, to_date
 
 
 def _get_user_from_employee(employee):
@@ -41,17 +50,15 @@ def _get_user_from_employee(employee):
 # ---------------------------------------------------------
 
 @frappe.whitelist()
-def get_employee_dashboard(employee):
+def get_employee_dashboard(employee, from_date=None, to_date=None):
     if not employee:
         frappe.throw(_("Employee is required"))
-    
-    today = date.today()
-    # Rolling 30-day window
-    month_start = today - timedelta(days=30)
-    month_end   = today
-    upper_bound = month_end + timedelta(days=1)
 
-    user_id = _get_user_from_employee(employee)
+    start_date, end_date = _resolve_date_range(from_date, to_date)
+    upper_bound = end_date + timedelta(days=1)
+
+    user_id = frappe.db.get_value("Employee", employee, "user_id")
+    employee_name = frappe.db.get_value("Employee", employee, "employee_name") or employee
 
     response = {
         "crm": {
@@ -97,49 +104,53 @@ def get_employee_dashboard(employee):
             "labels": [],
             "values": []
         },
-        "total_task": 0
+        "total_task": 0,
+        "date_range": {
+            "from_date": str(start_date),
+            "to_date": str(end_date)
+        }
     }
 
     if not user_id:
         return response
 
     # ------------------------------------------------------------------
-    # CRM — Total Leads (Last 30 Days)
+    # CRM — Total Leads (Using qualified_on)
     # ------------------------------------------------------------------
     total_leads = frappe.db.count("Lead", {
-        "lead_owner": user_id,
-        "creation": ["between", [month_start, upper_bound]]
+        "qualified_by": user_id,
+        "qualified_on": ["between", [start_date, end_date]]
     })
     response["crm"]["total_leads"] = total_leads
 
     # ------------------------------------------------------------------
-    # CRM — Opportunities (Last 30 Days)
+    # CRM — Opportunities
     # ------------------------------------------------------------------
     response["crm"]["total_opportunities"] = frappe.db.count("Opportunity", {
         "opportunity_owner": user_id,
-        "creation": ["between", [month_start, upper_bound]]
+        "creation": ["between", [start_date, upper_bound]]
     })
 
     # ------------------------------------------------------------------
-    # CRM — Sales Invoices (Last 30 Days)
+    # CRM — Sales Invoices
     # ------------------------------------------------------------------
     if frappe.db.exists("DocType", "Sales Invoice"):
         response["crm"]["sales_invoices"] = frappe.db.count("Sales Invoice", {
             "owner": user_id,
-            "posting_date": ["between", [month_start, month_end]]
+            "posting_date": ["between", [start_date, end_date]]
         })
 
     # ------------------------------------------------------------------
-    # CRM — Active Customers (Last 30 Days)
+    # CRM — Active Customers (From Lead field)
     # ------------------------------------------------------------------
     active_customers = frappe.db.sql("""
         SELECT COUNT(DISTINCT c.name)
         FROM `tabCustomer` c
-        JOIN `tabLead` l ON l.customer = c.name
-        WHERE l.lead_owner = %s
+        JOIN `tabLead` l ON c.lead_name = l.name
+        WHERE l.qualified_by = %s
           AND c.disabled = 0
           AND l.creation BETWEEN %s AND %s
-    """, (user_id, month_start, upper_bound))[0][0] or 0
+    """, (user_id, start_date, upper_bound))[0][0] or 0
     response["crm"]["active_customers"] = active_customers
 
     if total_leads > 0:
@@ -148,16 +159,16 @@ def get_employee_dashboard(employee):
         )
 
     # ------------------------------------------------------------------
-    # Leads Pulse Chart (Daily distribution for Last 30 Days)
+    # Leads Pulse Chart (Using qualified_on for activity date)
     # ------------------------------------------------------------------
     leads_data = frappe.db.sql("""
-        SELECT DATE(creation) AS d, COUNT(*) AS cnt
+        SELECT qualified_on AS d, COUNT(*) AS cnt
         FROM `tabLead`
-        WHERE lead_owner = %s
-          AND creation BETWEEN %s AND %s
-        GROUP BY DATE(creation)
-        ORDER BY DATE(creation)
-    """, (user_id, month_start, upper_bound), as_dict=True)
+        WHERE qualified_by = %s
+          AND qualified_on BETWEEN %s AND %s
+        GROUP BY qualified_on
+        ORDER BY qualified_on
+    """, (user_id, start_date, end_date), as_dict=True)
 
     pulse_map = {}
     for row in leads_data:
@@ -166,20 +177,21 @@ def get_employee_dashboard(employee):
             d_str = str(frappe.utils.getdate(d_val))
             pulse_map[d_str] = int(row.get("cnt") or 0)
 
-    num_days     = (month_end - month_start).days + 1
+    num_days     = (end_date - start_date).days + 1
     pulse_labels = []
     pulse_values = []
     for i in range(num_days):
-        d_obj = month_start + timedelta(days=i)
-        d_str = d_obj.strftime("%Y-%m-%d")
-        pulse_labels.append(d_str)
-        pulse_values.append(pulse_map.get(d_str, 0))
+        d_obj = start_date + timedelta(days=i)
+        d_str_full = d_obj.strftime("%Y-%m-%d")
+        d_str_disp = d_obj.strftime("%d-%m")
+        pulse_labels.append(d_str_disp)
+        pulse_values.append(pulse_map.get(d_str_full, 0))
 
     response["leads_pulse"]["labels"] = pulse_labels
     response["leads_pulse"]["values"] = pulse_values
 
     # ------------------------------------------------------------------
-    # HR & Attendance (Last 30 Days)
+    # HR & Attendance
     # ------------------------------------------------------------------
     attendance_stats_list = frappe.db.sql("""
         SELECT
@@ -190,7 +202,7 @@ def get_employee_dashboard(employee):
         WHERE employee = %s
           AND docstatus IN (0, 1)
           AND attendance_date BETWEEN %s AND %s
-    """, (employee, month_start, month_end), as_dict=True)
+    """, (employee, start_date, end_date), as_dict=True)
 
     attendance_stats = attendance_stats_list[0] if attendance_stats_list else {}
 
@@ -203,85 +215,85 @@ def get_employee_dashboard(employee):
     ]
 
     # ------------------------------------------------------------------
-    # Daily Employee Report (Last 30 Days)
+    # Daily Employee Report (Count Only)
     # ------------------------------------------------------------------
-    reports = frappe.db.get_all(
-        "Daily Employee Report",
+    response["daily_report"] = frappe.db.count("Daily Employee Report", {
+        "employee": employee,
+        "date": ["between", [start_date, end_date]]
+    })
+
+    # ------------------------------------------------------------------
+    # Recent Activity Log: Employee Checkin (IN/OUT)
+    # ------------------------------------------------------------------
+    checkins = frappe.db.get_all(
+        "Employee Checkin",
         filters={
             "employee": employee,
-            "date": ["between", [month_start, month_end]]
+            "time": ["between", [start_date, upper_bound]]
         },
-        fields=["date", "daily_summary"],
-        order_by="date desc",
+        fields=["time", "log_type"],
+        order_by="time desc",
         limit=20
     )
 
-    response["daily_report"] = frappe.db.count("Daily Employee Report", {
-        "employee": employee,
-        "date": ["between", [month_start, month_end]]
-    })
-
     response["hr"]["recent_checkins"] = [
         {
-            "time": r.get("date"),
-            "log_type": "REPORT",
-            "device_id": r.get("daily_summary")
+            "time": r.get("time"),
+            "log_type": r.get("log_type"),
+            "device_id": _("Check {0}").format(r.get("log_type"))
         }
-        for r in reports
+        for r in checkins
     ]
 
     # ------------------------------------------------------------------
-    # Appointments (Last 30 Days)
+    # Appointments (custom_qualified_by = employee ID)
     # ------------------------------------------------------------------
     response["appointments"]["total"] = frappe.db.count("Appointment", {
-        "owner": user_id,
-        "scheduled_time": ["between", [month_start, upper_bound]]
+        "custom_qualified_by": employee,
+        "scheduled_time": ["between", [start_date, upper_bound]]
     })
 
-    # ─────────────────────────────────────────────────────
-    # Events Chart (Last 30 Days)
-    # ─────────────────────────────────────────────────────
-    categories  = ["Call", "Meeting", "Event", "Other"]
+    # ------------------------------------------------------------------
+    # Events Chart (custom_own = employee ID)
+    # ------------------------------------------------------------------
+    categories  = ["Call", "Meeting", "Sent/Received Email", "Event", "Other"]
     counts_map  = {cat: 0 for cat in categories}
 
     events_filters = {
-        "starts_on": ["between", [month_start, upper_bound]]
+        "custom_own": employee,
+        "starts_on": ["between", [start_date, upper_bound]]
     }
-    if frappe.db.has_column("Event", "employee"):
-        events_filters["employee"] = employee
-    else:
-        events_filters["owner"] = user_id
 
-    event_counts = frappe.db.get_list("Event", filters=events_filters, fields=["event_type", "count(*) as cnt"], group_by="event_type")
+    events = frappe.get_all(
+        "Event",
+        filters=events_filters,
+        fields=["event_category"]
+    )
 
-    for row in event_counts:
-        etype = (row.get("event_type") or "").strip()
-        cnt   = int(row.get("cnt") or 0)
+    for row in events:
+        etype = (row.get("event_category") or "").strip()
+        cnt = 1
         if etype == "Call":
             counts_map["Call"] += cnt
         elif etype == "Meeting":
             counts_map["Meeting"] += cnt
+        elif etype == "Sent/Received Email":
+            counts_map["Sent/Received Email"] += cnt
         elif etype in ("Public", "Private", "Event"):
-            counts_map["Event"] += cnt
+             counts_map["Event"] += cnt
         else:
-            counts_map["Other"] += cnt
+             counts_map["Other"] += cnt
 
     response["events_chart"]["labels"] = categories
     response["events_chart"]["values"] = [counts_map[cat] for cat in categories]
 
     # ------------------------------------------------------------------
-    # Total Tasks (Last 30 Days)
+    # Total Tasks (custom_assign_to = user_id)
     # ------------------------------------------------------------------
     if frappe.db.exists("DocType", "Task"):
         response["total_task"] = frappe.db.count("Task", {
-            "owner": user_id,
-            "creation": ["between", [month_start, upper_bound]]
+            "custom_assign_to": user_id,
+            "creation": ["between", [start_date, upper_bound]]
         })
 
     return response
-
-
-# ---------------------------------------------------------
-# EVENTS CHART API
-# ---------------------------------------------------------
-# Removed obsolete get_events_by_category in favour of unified get_employee_dashboard

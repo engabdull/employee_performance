@@ -1,3 +1,10 @@
+// Global store for chart instances to allow proper updating without DOM errors
+let epd_charts = {
+    main_dist: null,
+    leads_pulse: null,
+    attendance_donut: null
+};
+
 frappe.pages['employee-performance'].on_page_load = function (wrapper) {
     var page = frappe.ui.make_app_page({
         parent: wrapper,
@@ -21,9 +28,22 @@ function render_layout(page) {
 			<div class="epd-header">
 				<div class="epd-greeting">
 					<h1 id="epd-greeting-text">${greeting}</h1>
-					<p>${__('Here is a performance overview for the Last 30 Days.')}</p>
+					<p id="epd-date-range-label">${__('Select a date range and click Apply.')}</p>
 				</div>
-				<div class="epd-filter" id="employee-selector-container"></div>
+				<div class="epd-filter-row">
+					<div class="epd-filter-field" id="employee-selector-container"></div>
+					<div class="epd-date-field">
+						<label class="epd-date-label">${__('From')}</label>
+						<input type="date" id="epd-from-date" class="epd-date-input">
+					</div>
+					<div class="epd-date-field">
+						<label class="epd-date-label">${__('To')}</label>
+						<input type="date" id="epd-to-date" class="epd-date-input">
+					</div>
+					<button class="btn btn-primary btn-sm epd-apply-btn" id="epd-apply-btn">
+						<i class="fa fa-check" style="margin-right:5px;"></i>${__('Apply')}
+					</button>
+				</div>
 			</div>
 
 			<!-- 4-Card KPI Grid -->
@@ -52,14 +72,14 @@ function render_layout(page) {
 
 			<!-- Main Content: Horizontal Split -->
 			<div class="epd-main-row">
-				<!-- Left: Reports & Trend -->
+				<!-- Left: Events & Trend -->
 				<div class="epd-content-section">
 					<div class="section-title">
-						${__("30 Days Activity Distribution")}
+						<span id="events-section-title">${__("Activity Distribution")}</span>
 						<span>${__("Events & Categories")}</span>
 					</div>
 					<div id="main-distribution-chart" style="height: 350px; min-height: 350px;"></div>
-                    
+
                     <div style="margin-top: 40px;">
                         <div class="section-title">${__("Leads Pulse")}</div>
                         <div id="leads-pulse-chart" style="height: 200px; min-height: 200px;"></div>
@@ -94,12 +114,12 @@ function render_layout(page) {
                             <tr>
                                 <td><div class="emp-name">${__("Total Attendance")}</div></td>
                                 <td data-field="attendance_total">0</td>
-                                <td><div class="emp-meta">${__("Total present days in the last 30 days.")}</div></td>
+                                <td><div class="emp-meta">${__("Total present days in selected period.")}</div></td>
                             </tr>
                             <tr>
                                 <td><div class="emp-name">${__("Daily Report Count")}</div></td>
                                 <td data-field="daily_report">0</td>
-                                <td><div class="emp-meta">${__("Total recorded logs for the last 30 days.")}</div></td>
+                                <td><div class="emp-meta">${__("Total recorded logs for selected period.")}</div></td>
                             </tr>
                             <tr>
                                 <td><div class="emp-name">${__("Appointments")}</div></td>
@@ -109,7 +129,7 @@ function render_layout(page) {
                             <tr>
                                 <td><div class="emp-name">${__("Total Task")}</div></td>
                                 <td data-field="total_task">0</td>
-                                <td><div class="emp-meta">${__("Total tasks assigned in the last 30 days.")}</div></td>
+                                <td><div class="emp-meta">${__("Total tasks assigned in selected period.")}</div></td>
                             </tr>
                         </tbody>
                     </table>
@@ -128,7 +148,23 @@ function get_dynamic_greeting() {
     return __('Good Evening');
 }
 
+// ---------------------------------------------------------------
+// Default date helpers
+// ---------------------------------------------------------------
+function get_first_day_of_month() {
+    let now = new Date();
+    return frappe.datetime.obj_to_str(new Date(now.getFullYear(), now.getMonth(), 1));
+}
+
+function get_today() {
+    return frappe.datetime.get_today();
+}
+
+// ---------------------------------------------------------------
+// Dashboard initialisation
+// ---------------------------------------------------------------
 function init_dashboard(page) {
+    // --- Employee selector (Frappe Link control) ---
     let selector = frappe.ui.form.make_control({
         parent: $('#employee-selector-container'),
         df: {
@@ -136,43 +172,120 @@ function init_dashboard(page) {
             fieldtype: 'Link',
             fieldname: 'employee',
             options: 'Employee',
-            placeholder: __('Choose employee'),
-            change: function () {
-                refresh_dashboard(selector.get_value());
-            }
+            placeholder: __('Choose employee')
         },
         render_input: true
     });
 
+    // --- Native date inputs (calendar picker, no free typing) ---
+    let $from = $('#epd-from-date');
+    let $to = $('#epd-to-date');
+    $from.val(get_first_day_of_month());
+    $to.val(get_today());
+
+    // --- Apply button ---
+    $('#epd-apply-btn').on('click', function () {
+        let emp = selector.get_value();
+        let from = $from.val();
+        let to = $to.val();
+        if (!emp) {
+            frappe.msgprint(__('Please select an employee first.'));
+            return;
+        }
+        if (from && to && from > to) {
+            frappe.msgprint(__('From Date cannot be after To Date.'));
+            return;
+        }
+        refresh_dashboard(emp, from, to);
+    });
+
+    // --- Auto-load current user's employee ---
     frappe.db.get_value('Employee', { user_id: frappe.session.user }, 'name').then(r => {
         if (r && r.message && r.message.name) {
             selector.set_value(r.message.name);
-            refresh_dashboard(r.message.name);
+            refresh_dashboard(r.message.name, $from.val(), $to.val());
         }
     });
 
     page.employee_selector = selector;
 }
 
-function refresh_dashboard(employee) {
+
+// ---------------------------------------------------------------
+// Clear all client-side caches for this dashboard
+// ---------------------------------------------------------------
+function clear_dashboard_cache() {
+    // 1. Frappe model/doctype cache
+    if (frappe.model && frappe.model.clear_cache) {
+        frappe.model.clear_cache();
+    }
+    // 2. Frappe's internal request/response cache
+    if (frappe.cache && frappe.cache.clear) {
+        frappe.cache.clear();
+    }
+    // 3. Any localStorage keys we may have set
+    try {
+        Object.keys(localStorage).forEach(function (key) {
+            if (key.startsWith('epd_') || key.includes('employee_performance')) {
+                localStorage.removeItem(key);
+            }
+        });
+    } catch (e) { /* ignore */ }
+
+    console.log('EPD: Client cache cleared');
+}
+
+// ---------------------------------------------------------------
+// Refresh dashboard
+// ---------------------------------------------------------------
+function refresh_dashboard(employee, from_date, to_date) {
     if (!employee) return;
+
+    // Clear cache before every fetch so Apply always returns fresh data
+    clear_dashboard_cache();
+
+    // Show loading state on Apply button
+    let $btn = $('#epd-apply-btn');
+    $btn.prop('disabled', true).html(`<i class="fa fa-spinner fa-spin" style="margin-right:5px;"></i>${__('Loading...')}`);
+
     frappe.call({
         method: 'employee_performance.employee_performance.page.employee_performance.employee_performance.get_employee_dashboard',
-        args: { employee: employee },
+        args: {
+            employee: employee,
+            from_date: from_date || get_first_day_of_month(),
+            to_date: to_date || get_today(),
+            _ts: Date.now()   // cache-buster: forces a fresh request each time
+        },
+        no_spinner: true,
         callback: function (r) {
+            $btn.prop('disabled', false).html(`<i class="fa fa-check" style="margin-right:5px;"></i>${__('Apply')}`);
             if (r.message) {
                 update_ui(r.message);
             }
+        },
+        error: function () {
+            $btn.prop('disabled', false).html(`<i class="fa fa-check" style="margin-right:5px;"></i>${__('Apply')}`);
         }
     });
 }
 
+// ---------------------------------------------------------------
+// Update UI with API response
+// ---------------------------------------------------------------
 function update_ui(data) {
     if (!data) {
         console.error("EPD: No data received in update_ui");
         return;
     }
     console.log("EPD: Update UI with data:", data);
+
+    // Update date range label in header
+    if (data.date_range) {
+        let from_fmt = frappe.datetime.str_to_user(data.date_range.from_date);
+        let to_fmt = frappe.datetime.str_to_user(data.date_range.to_date);
+        $('#epd-date-range-label').text(`${__('Showing data from')} ${from_fmt} ${__('to')} ${to_fmt}`);
+        $('#events-section-title').text(`${__('Activity Distribution')} (${from_fmt} – ${to_fmt})`);
+    }
 
     // KPI cards
     $('[data-field="total_leads"]').text(data.crm.total_leads || 0);
@@ -186,11 +299,10 @@ function update_ui(data) {
     $('[data-field="appointments"]').text(data.appointments ? data.appointments.total || 0 : 0);
     $('[data-field="total_task"]').text(data.total_task || 0);
 
-    // FIX: Replace fragile setTimeout with a retry-based readiness check.
-    // This prevents silent failures when frappe.Chart hasn't loaded yet.
+    // Charts — wait for frappe.Chart to be ready
     render_charts_when_ready(data);
 
-    // Timeline doesn't depend on frappe.Chart — render immediately
+    // Timeline — no frappe.Chart dependency
     try {
         render_activity_timeline(data.hr.recent_checkins);
     } catch (e) {
@@ -199,11 +311,9 @@ function update_ui(data) {
 }
 
 /**
- * FIX: Retry loop instead of a one-shot setTimeout.
- * Retries every 300ms up to `maxRetries` times before giving up.
+ * Retry loop: retries every 300 ms up to maxRetries times.
  */
 function render_charts_when_ready(data, retries) {
-    // Default to 10 retries (= 3 seconds total wait)
     if (retries === undefined) retries = 10;
 
     if (window.frappe && frappe.Chart) {
@@ -220,91 +330,101 @@ function render_charts_when_ready(data, retries) {
 }
 
 function render_main_dist(data) {
-    let container = "#main-distribution-chart";
-    if (!$(container).length) return;
-    $(container).empty();
+    let container_id = "main-distribution-chart";
+    let $container = $("#" + container_id);
+    if (!$container.length) return;
 
-    if (!data || !data.labels || data.labels.length === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 60px 20px;">${__('No activity data for the last 30 days')}</div>`);
-        return;
+    let total = (data && data.values) ? data.values.reduce((a, b) => a + b, 0) : 0;
+
+    let chart_data = {
+        labels: total > 0 ? data.labels : [__("No Data")],
+        datasets: [{ name: __("Activity"), values: total > 0 ? data.values : [0] }]
+    };
+
+    if (epd_charts.main_dist) {
+        epd_charts.main_dist.update(chart_data);
+    } else {
+        epd_charts.main_dist = new frappe.Chart("#" + container_id, {
+            data: chart_data,
+            type: 'bar',
+            height: 350,
+            colors: ['#3b82f6'],
+            barOptions: { spaceRatio: 0.2 },
+            axisOptions: { xIsSeries: 1 }
+        });
     }
 
-    // FIX: Guard against all-zero values to avoid rendering an empty chart frame
-    let total = (data.values || []).reduce((a, b) => a + b, 0);
-    if (total === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 60px 20px;">${__('No activity data for last month')}</div>`);
-        return;
-    }
-
-    new frappe.Chart(container, {
-        data: {
-            labels: data.labels,
-            datasets: [{ name: __("Activity"), values: data.values }]
-        },
-        type: 'bar',
-        height: 350,
-        colors: ['#3b82f6'],
-        barOptions: { spaceRatio: 0.2 },
-        axisOptions: { xIsSeries: 1 }
-    });
+    // Force whole numbers on the Y/X axis by hiding any labels with decimals
+    setTimeout(() => {
+        $("#" + container_id).find('.y-axis-text, .x-axis-text').each(function () {
+            if ($(this).text().includes('.')) {
+                $(this).html(''); // Clear the text
+            }
+        });
+    }, 200);
 }
 
 function render_leads_pulse(data) {
-    let container = "#leads-pulse-chart";
-    if (!$(container).length) return;
-    $(container).empty();
+    let container_id = "leads-pulse-chart";
+    let $container = $("#" + container_id);
+    if (!$container.length) return;
 
-    if (!data || !data.labels || data.labels.length === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 40px 20px;">${__('No leads data for the last 30 days')}</div>`);
-        return;
+    let total = (data && data.values) ? data.values.reduce((a, b) => a + b, 0) : 0;
+
+    let chart_data = {
+        labels: total > 0 ? data.labels : [__("No Data")],
+        datasets: [{ name: __("Leads"), values: total > 0 ? data.values : [0] }]
+    };
+
+    if (epd_charts.leads_pulse) {
+        epd_charts.leads_pulse.update(chart_data);
+    } else {
+        epd_charts.leads_pulse = new frappe.Chart("#" + container_id, {
+            data: chart_data,
+            type: 'line',
+            height: 200,
+            colors: ['#a855f7'],
+            lineOptions: { regionFill: 1, hideDots: 1 }
+        });
     }
 
-    // FIX: Guard against all-zero before rendering
-    let total = (data.values || []).reduce((a, b) => a + b, 0);
-    if (total === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 40px 20px;">${__('No leads data for last month')}</div>`);
-        return;
-    }
-
-    new frappe.Chart(container, {
-        data: {
-            labels: data.labels,
-            datasets: [{ name: __("Leads"), values: data.values }]
-        },
-        type: 'line',
-        height: 200,
-        colors: ['#a855f7'],
-        lineOptions: { regionFill: 1, hideDots: 1 }
-    });
+    // Force whole numbers
+    setTimeout(() => {
+        $("#" + container_id).find('.y-axis-text, .x-axis-text').each(function () {
+            if ($(this).text().includes('.')) {
+                $(this).html('');
+            }
+        });
+    }, 200);
 }
 
 function render_attendance_donut(data) {
-    let container = "#attendance-donut-chart";
-    if (!$(container).length) return;
-    $(container).empty();
+    let container_id = "attendance-donut-chart";
+    let $container = $("#" + container_id);
+    if (!$container.length) return;
 
-    if (!data || !data.labels || data.labels.length === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 60px 20px;">${__('No attendance data for the last 30 days')}</div>`);
-        return;
+    let total = (data && data.values) ? data.values.reduce((a, b) => a + b, 0) : 0;
+
+    let chart_data = {
+        labels: total > 0 ? data.labels : [__("No Data")],
+        datasets: [{ values: total > 0 ? data.values : [1] }] // Donut chart needs at least 1 value to draw a circle
+    };
+
+    // For empty donut, make it grey
+    let current_colors = total > 0 ? ['#22c55e', '#ef4444', '#f59e0b'] : ['#e2e8f0'];
+
+    if (epd_charts.attendance_donut) {
+        // Frappe chart doesn't gracefully update colors via update(), but the data will at least render.
+        epd_charts.attendance_donut.update(chart_data);
+    } else {
+        epd_charts.attendance_donut = new frappe.Chart("#" + container_id, {
+            data: chart_data,
+            type: 'donut',
+            height: 280,
+            colors: current_colors,
+            donutOptions: { strokeWidth: 40 }
+        });
     }
-
-    // FIX: Guard against all-zero — frappe.Chart donut crashes on empty data
-    let total = (data.values || []).reduce((a, b) => a + b, 0);
-    if (total === 0) {
-        $(container).html(`<div class="text-muted text-center" style="padding: 60px 20px;">${__('No attendance data for last month')}</div>`);
-        return;
-    }
-
-    new frappe.Chart(container, {
-        data: {
-            labels: data.labels,
-            datasets: [{ values: data.values }]
-        },
-        type: 'donut',
-        height: 280,
-        colors: ['#22c55e', '#ef4444', '#f59e0b'],
-        donutOptions: { strokeWidth: 40 }
-    });
 }
 
 function render_activity_timeline(reports) {
@@ -313,18 +433,24 @@ function render_activity_timeline(reports) {
     $container.empty();
 
     if (!reports || reports.length === 0) {
-        $container.append(`<div class="text-muted text-center" style="padding: 20px;">${__('No reports found')}</div>`);
+        $container.append(`<div class="text-muted text-center" style="padding: 20px;">${__('No recent check-ins found')}</div>`);
         return;
     }
 
     reports.slice(0, 10).forEach(log => {
-        let date = frappe.datetime.global_date_format(log.time);
+        // Show Date + Time for checkins
+        let datetime = frappe.datetime.str_to_user(log.time);
+
+        // Determine color class based on OUT/IN
+        let badgeClass = (log.log_type === 'OUT') ? 'log-out' : 'log-in';
+        let typeLabel = (log.log_type === 'OUT') ? __('Check OUT') : __('Check IN');
+
         $container.append(`
 			<div class="timeline-row">
 				<div class="emp-name" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    ${log.device_id || __('Daily Report')}
+                    ${datetime}
                 </div>
-				<div class="timeline-log-type log-in">${date}</div>
+				<div class="timeline-log-type ${badgeClass}">${typeLabel}</div>
 			</div>
 		`);
     });

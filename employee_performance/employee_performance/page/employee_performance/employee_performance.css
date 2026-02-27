@@ -229,15 +229,91 @@
 	color: #ef4444;
 }
 
-/* Filter Container Premium */
-#employee-selector-container {
+/* Filter Row — Global date + employee filters */
+.epd-filter-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: nowrap;
+	/* keep everything on one line */
+	justify-content: flex-end;
+}
+
+.epd-filter-field {
 	background: var(--epd-card-bg);
 	border: 1px solid var(--epd-border);
 	border-radius: 12px;
 	padding: 5px 15px;
 	box-shadow: var(--epd-shadow);
+	min-width: 180px;
 }
 
-#employee-selector-container .frappe-control {
+.epd-filter-field .frappe-control {
 	margin: 0;
+}
+
+/* Native date picker fields */
+.epd-date-field {
+	background: var(--epd-card-bg);
+	border: 1px solid var(--epd-border);
+	border-radius: 12px;
+	padding: 6px 14px;
+	box-shadow: var(--epd-shadow);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.epd-date-label {
+	font-size: 0.7rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	color: var(--epd-text-dim);
+	letter-spacing: 0.05em;
+	margin: 0;
+}
+
+.epd-date-input {
+	border: none;
+	outline: none;
+	background: transparent;
+	color: var(--epd-text-main);
+	font-size: 0.9rem;
+	font-weight: 500;
+	font-family: inherit;
+	cursor: pointer;
+	padding: 0;
+	min-width: 130px;
+}
+
+.epd-date-input::-webkit-calendar-picker-indicator {
+	cursor: pointer;
+	opacity: 0.7;
+	filter: invert(0.4);
+}
+
+[data-theme="dark"] .epd-date-input::-webkit-calendar-picker-indicator {
+	filter: invert(0.7);
+}
+
+.epd-apply-btn {
+	border-radius: 12px !important;
+	padding: 10px 22px !important;
+	font-weight: 600 !important;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	flex-shrink: 0;
+	/* never shrink or wrap */
+	transition: transform 0.15s ease, box-shadow 0.15s ease;
+	box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3) !important;
+}
+
+.epd-apply-btn:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4) !important;
+}
+
+.epd-apply-btn:disabled {
+	opacity: 0.75;
+	transform: none;
 }
