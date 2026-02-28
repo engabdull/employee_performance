@@ -8,7 +8,7 @@ def get_script_content(reference_doctype, field_name='owner'):
 
     return f"""user_roles = frappe.get_all("Has Role", filters={{"parent": user}}, pluck="role")
 if "High Management" in user_roles or "System Manager" in user_roles:
-    conditions = ""
+    conditions = "1=1"
 else:
     cur_employee = frappe.db.get_value("Employee", {{"user_id": user}}, "name")
     if not cur_employee:
