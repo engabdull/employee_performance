@@ -6,7 +6,7 @@ def get_script_content(reference_doctype, field_name='owner'):
     else:
         condition_val = f"{field_name} in ({{val_str}})"
 
-    return f"""user_roles = frappe.get_roles(user)
+    return f"""user_roles = frappe.get_all("Has Role", filters={{"parent": user}}, pluck="role")
 if "High Management" in user_roles or "System Manager" in user_roles:
     conditions = ""
 else:
