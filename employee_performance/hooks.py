@@ -18,7 +18,8 @@ fixtures = [
                 [
                     "Leader Permission - Daily Employee Report",
                     "Leader Permission - Event",
-                    "Leader Permission - Appointment"
+                    "Leader Permission - Appointment",
+                    "Leader Permission - Lead"
                 ]
             ]
         ]
