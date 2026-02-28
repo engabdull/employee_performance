@@ -7,3 +7,20 @@ app_license = "mit"
 
 # Load JS and CSS globally so the page controller is registered in the desk
 # Remove global hooks to let Frappe page router handle it natively
+
+fixtures = [
+    {
+        "dt": "Server Script",
+        "filters": [
+            [
+                "name",
+                "in",
+                [
+                    "Leader Permission - Daily Employee Report",
+                    "Leader Permission - Event",
+                    "Leader Permission - Appointment"
+                ]
+            ]
+        ]
+    }
+]
